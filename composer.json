@@ -1,0 +1,14 @@
+{
+  "name": "azuracast-plugins/azuracast-traitement-fichiers",
+  "description": "Traitement Fichiers pour AzuraCast : calcule une seule fois les points de cue (cue_in, cue_out, fondus, cross_start_next) et le gain vers -14 LUFS des nouveaux fichiers.",
+  "type": "azuracast-plugin",
+  "license": "MIT",
+  "require": {
+    "php": "^8.4"
+  },
+  "autoload": {
+    "psr-4": {
+      "Plugin\\AzuracastTraitementFichiers\\": "src/"
+    }
+  }
+}

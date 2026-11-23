@@ -1,0 +1,41 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_DATABASE: tf
+          MARIADB_USER: tf
+          MARIADB_PASSWORD: tf
+          MARIADB_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          extensions: pdo_mysql, mbstring
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: ffmpeg and shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg shellcheck
+      - name: PHP syntax
+        run: find src events.php tests -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: PHP tests (analysis, database, background processing)
+        run: php tests/run.php
+      - name: Shell
+        run: shellcheck -S warning install.sh bin/*.sh
+      - name: JS tests
+        run: npm ci && npm test
