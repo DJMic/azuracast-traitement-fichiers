@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Plugin\AzuracastTraitementFichiers\Controller;
 
-use App\Doctrine\ReloadableEntityManagerInterface;
 use App\Entity\Station;
 use App\Http\Response;
 use App\Http\ServerRequest;
 use InvalidArgumentException;
-use Plugin\AzuracastTraitementFichiers\Service\DbalSql;
 use Plugin\AzuracastTraitementFichiers\Service\Plugin;
 use Plugin\AzuracastTraitementFichiers\Service\Processor;
 use Plugin\AzuracastTraitementFichiers\Service\Settings;
@@ -22,14 +20,10 @@ final class PanelController
 {
     public const string CSRF_NAMESPACE = 'traitement_fichiers';
 
-    private readonly DbalSql $sql;
-
     public function __construct(
         private readonly Store $store,
-        private readonly Processor $processor,
-        ReloadableEntityManagerInterface $em
+        private readonly Processor $processor
     ) {
-        $this->sql = new DbalSql($em);
     }
 
     public function assetAction(ServerRequest $request, Response $response, array $params): ResponseInterface
@@ -144,13 +138,7 @@ final class PanelController
     /** @return list<array{id: int, name: string}> */
     private function playlists(Station $station): array
     {
-        return array_map(
-            static fn(array $row): array => ['id' => (int)$row['id'], 'name' => (string)$row['name']],
-            $this->sql->fetchAll(
-                'SELECT id, name FROM station_playlist WHERE station_id = ? ORDER BY name ASC',
-                [$station->id]
-            )
-        );
+        return $this->processor->finder()->playlists((int)$station->id);
     }
 
     private function verifyCsrf(ServerRequest $request): void

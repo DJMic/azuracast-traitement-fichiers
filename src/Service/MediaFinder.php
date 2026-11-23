@@ -111,6 +111,18 @@ final class MediaFinder
         ) === 1;
     }
 
+    /** @return list<array{id: int, name: string}> Playlists of a station, by name. */
+    public function playlists(int $stationId): array
+    {
+        return array_map(
+            static fn(array $row): array => ['id' => (int)$row['id'], 'name' => (string)$row['name']],
+            $this->sql->fetchAll(
+                'SELECT id, name FROM station_playlists WHERE station_id = ? ORDER BY name ASC',
+                [$stationId]
+            )
+        );
+    }
+
     /** True if none of the six custom cue values is set (raw JSON of station_media.extra_metadata). */
     public static function isEmpty(mixed $rawJson): bool
     {

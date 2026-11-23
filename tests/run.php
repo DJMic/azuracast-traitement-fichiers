@@ -237,13 +237,15 @@ try {
 if ($pdo !== null) {
     $sql = new PdoSql($pdo);
     // Same columns as AzuraCast's tables (only those the plugin uses).
-    $pdo->exec('DROP TABLE IF EXISTS station_playlist_media, station_media, station');
+    $pdo->exec('DROP TABLE IF EXISTS station_playlist_media, station_playlists, station_media, station');
     $pdo->exec('CREATE TABLE station (id INT PRIMARY KEY, is_enabled TINYINT(1) NOT NULL)');
     $pdo->exec('CREATE TABLE station_media (id INT AUTO_INCREMENT PRIMARY KEY, storage_location_id INT NOT NULL,
         path VARCHAR(500) NOT NULL, length DOUBLE NOT NULL, size BIGINT NOT NULL, mtime INT NOT NULL,
         uploaded_at INT NOT NULL, extra_metadata LONGTEXT NULL CHECK (extra_metadata IS NULL OR JSON_VALID(extra_metadata)))');
     $pdo->exec('CREATE TABLE station_playlist_media (id INT AUTO_INCREMENT PRIMARY KEY, media_id INT NOT NULL, playlist_id INT NOT NULL)');
+    $pdo->exec('CREATE TABLE station_playlists (id INT AUTO_INCREMENT PRIMARY KEY, station_id INT NOT NULL, name VARCHAR(200) NOT NULL)');
     $pdo->exec('INSERT INTO station VALUES (1, 1), (2, 1), (3, 0)');
+    $pdo->exec("INSERT INTO station_playlists (id, station_id, name) VALUES (40, 1, 'Jingles'), (5, 1, 'Hits'), (6, 2, 'Autre station')");
 
     $now = time();
     $activated = $now - 86400;
@@ -277,6 +279,7 @@ if ($pdo !== null) {
     $pdo->exec('INSERT INTO station_playlist_media (media_id, playlist_id) VALUES (' . $ids['MP3/jingle.mp3'] . ', 40)');
 
     $finder = new MediaFinder($sql);
+    check('playlists de la station (table station_playlists)', $finder->playlists(1), [['id' => 5, 'name' => 'Hits'], ['id' => 40, 'name' => 'Jingles']]);
     $settings = ['activated_at' => $activated, 'excluded_playlists' => [40]] + Settings::defaults();
     $paths = static fn(array $list): array => array_map(static fn(array $m): string => $m['path'], $list);
 

@@ -1,5 +1,9 @@
 # Changements
 
+## 1.0.1
+
+- Correction : l'onglet ne se chargeait pas (« Table 'station_playlist' doesn't exist »). La table des playlists d'AzuraCast s'appelle `station_playlists`. La lecture des playlists est maintenant couverte par les tests.
+
 ## 1.0.0
 
 Première version.
