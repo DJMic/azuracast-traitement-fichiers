@@ -18,7 +18,7 @@ Le plugin ajoute l'onglet **« Traitement Fichiers »** dans les **Paramètres d
 - Il analyse les **nouveaux fichiers** dont les six valeurs personnalisées sont **toutes vides**.
 - Il ne touche **jamais** à un fichier qui a déjà une de ces valeurs, qu'elle vienne de ses tags (par exemple un fichier préparé avec `ajouter_cues.py`) ou qu'elle ait été saisie à la main dans AzuraCast.
 - Il ne fait rien quand l'audio d'un fichier est remplacé : ses anciennes valeurs restent. À vous de les corriger si nécessaire.
-- Il ignore les fichiers de **plus de 8 minutes** et ceux des **playlists exclues**.
+- Il ignore les fichiers de **plus de 8 minutes** et ceux des **répertoires exclus** (sous-répertoires compris).
 - Il ne modifie pas les fichiers audio : les valeurs sont écrites seulement dans la base de données d'AzuraCast.
 - Il n'analyse les fichiers déjà présents avant son activation que si vous le demandez (bouton « Analyser ces fichiers »).
 
@@ -55,7 +55,7 @@ curl -fsSL https://raw.githubusercontent.com/DJMic/azuracast-traitement-fichiers
 ## Mise en route
 
 1. Ouvrez une station, puis **Paramètres de la station** › onglet **Traitement Fichiers**. Il faut l'autorisation « Gérer la diffusion » de la station, la même que pour l'onglet AutoDJ.
-2. Vérifiez les seuils (−28 / −28 / −5 dB par défaut) et cochez les playlists à exclure, par exemple les jingles.
+2. Vérifiez les seuils (−28 / −28 / −5 dB par défaut) et cochez les répertoires à exclure, par exemple celui des jingles.
 3. Cochez **Activer le traitement des fichiers**, puis cliquez sur **Enregistrer**. Cet onglet a son propre bouton : le bouton « Enregistrer les modifications » d'AzuraCast, qui ne sauvegarde que les champs d'AzuraCast, est masqué tant que l'onglet est affiché.
 4. Envoyez un fichier. Environ une à deux minutes après la fin du traitement d'AzuraCast, ses valeurs apparaissent dans **Modifier le morceau** › onglet avancé (points de cue personnalisés).
 5. Si vous le souhaitez, lancez **Analyser ces fichiers** dans « Fichiers existants » pour compléter les fichiers déjà présents qui n'ont aucune valeur. Cette analyse avance chaque minute, en arrière-plan, et peut être arrêtée.
@@ -68,7 +68,9 @@ curl -fsSL https://raw.githubusercontent.com/DJMic/azuracast-traitement-fichiers
 | Seuil de début (cue_in) | −28 dB | Le début est placé juste avant la première mesure au-dessus de ce seuil. |
 | Seuil de fin (cue_out) | −28 dB | La fin est placée après la dernière mesure au-dessus de ce seuil. |
 | Seuil de fondu enchaîné (cross) | −5 dB | Le titre suivant démarre après la dernière mesure au-dessus de ce seuil (`cross_start_next`). |
-| Playlists exclues | aucune | Leurs fichiers ne sont jamais analysés. |
+| Répertoires exclus | aucun | Leurs fichiers, sous-répertoires compris, ne sont jamais analysés. |
+
+Les répertoires sont ceux de vos médias, présentés en arbre avec leur nombre de fichiers. Cocher un répertoire exclut aussi ses sous-répertoires. Les majuscules ne comptent pas (`Jingles` et `JINGLES` sont le même répertoire, comme dans la base d'AzuraCast). Si un répertoire exclu est renommé ou supprimé, il n'exclut plus rien : l'onglet le signale, et il suffit de le décocher. Un fichier déjà analysé puis déplacé dans un répertoire exclu garde ses valeurs.
 
 Comme dans Liquidsoap, les seuils sont **relatifs à la sonie de chaque morceau**. Pour un titre mesuré à −9 LUFS, un seuil de −28 dB correspond à −37 dB.
 
@@ -108,7 +110,7 @@ Différences voulues avec Liquidsoap :
 Une fois vos fichiers traités, désactivez **Activer AutoCue** (onglet AutoDJ), puis enregistrez et redémarrez la diffusion.
 
 - Les valeurs du plugin continuent d'être appliquées. AzuraCast les envoie à Liquidsoap que l'AutoCue soit activé ou non.
-- Les fichiers que le plugin n'analyse pas (plus de 8 minutes, playlists exclues) et les fichiers qui viennent d'arriver passent sans points de cue et **sans correction de volume**, sauf si vous leur mettez des valeurs à la main.
+- Les fichiers que le plugin n'analyse pas (plus de 8 minutes, répertoires exclus) et les fichiers qui viennent d'arriver passent sans points de cue et **sans correction de volume**, sauf si vous leur mettez des valeurs à la main.
 - Tant que l'AutoCue est activé, il ne calcule que pour les fichiers qui n'ont pas de valeurs.
 
 ## Commandes
@@ -156,7 +158,7 @@ Le script retire seulement la ligne de ce plugin de `docker-compose.override.yml
 ## Dépannage
 
 - **L'onglet n'apparaît pas.** Rechargez la page. Vérifiez que vous avez l'autorisation « Gérer la diffusion », puis lancez `bin/setup.sh --verifier`. Une nouvelle version d'AzuraCast a peut-être changé la page : l'analyse continue quand même, et vous pouvez suivre son travail avec `traitement-fichiers:executer`.
-- **Un fichier n'est pas analysé.** Vérifiez qu'aucune de ses six valeurs n'est renseignée, qu'il dure 8 minutes ou moins, qu'il n'est pas dans une playlist exclue, et qu'il a été ajouté après l'activation. Sinon, utilisez « Analyser ces fichiers ». La commande `traitement-fichiers:analyser` affiche ce que le plugin calculerait.
+- **Un fichier n'est pas analysé.** Vérifiez qu'aucune de ses six valeurs n'est renseignée, qu'il dure 8 minutes ou moins, qu'il n'est pas dans un répertoire exclu, et qu'il a été ajouté après l'activation. Sinon, utilisez « Analyser ces fichiers ». La commande `traitement-fichiers:analyser` affiche ce que le plugin calculerait.
 - **Tests du plugin** (pour les développeurs) : `php tests/run.php` et `npm test`. Les tests de la base de données ont besoin d'une base MariaDB de test, décrite en tête de `tests/run.php`.
 
 ## Licence

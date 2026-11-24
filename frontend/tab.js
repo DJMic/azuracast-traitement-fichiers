@@ -16,7 +16,8 @@ const POLL_MS = 30000;
 const CSS = `
 section.nav-content.${ACTIVE} > :not(#${PANE_ID}) { display: none !important; }
 form.${ACTIVE} > .buttons { display: none !important; }
-#${PANE_ID} .tf-playlists { max-height: 16rem; overflow-y: auto; }
+#${PANE_ID} .tf-folders { max-height: 20rem; overflow-y: auto; }
+#${PANE_ID} .tf-folders .tf-count { opacity: .65; }
 #${PANE_ID} .tf-facts li { margin-bottom: .25rem; }
 `;
 
@@ -239,6 +240,72 @@ function mount(document, window, basePath) {
         box.replaceChildren(text ? h(document, "div", {class: `alert alert-${kind} mb-0`, role: "status"}, text) : "");
     }
 
+    /** Tree of checkboxes: one line per folder, indented, with its number of files. */
+    function folderTree(state, settings) {
+        const excluded = new Set(settings.excluded_folders.map((folder) => folder.toLowerCase()));
+        let index = 0;
+        const line = (path, label, count, depth, extraClass = "") => {
+            const id = `tf-folder-${index++}`;
+            return h(document, "div", {class: `form-check tf-folder ${extraClass}`, style: `margin-left: ${depth * 1.25}rem`, "data-path": path.toLowerCase()},
+                h(document, "input", {class: "form-check-input tf-excluded", type: "checkbox", id, value: path,
+                    checked: excluded.has(path.toLowerCase()), onchange: () => syncTree()}),
+                h(document, "label", {class: "form-check-label", for: id}, label,
+                    count === null ? "" : h(document, "span", {class: "tf-count"}, ` (${plural(count, "fichier", "fichiers")})`)));
+        };
+
+        const parts = [];
+        if (state.missing_folders.length > 0) {
+            parts.push(h(document, "div", {class: "alert alert-warning py-2"},
+                h(document, "p", {class: "mb-1"}, state.missing_folders.length > 1
+                    ? "Ces répertoires exclus n'existent plus (renommés ou supprimés) : ils n'excluent plus rien. Décochez-les pour les retirer."
+                    : "Ce répertoire exclu n'existe plus (renommé ou supprimé) : il n'exclut plus rien. Décochez-le pour le retirer."),
+                state.missing_folders.map((path) => line(path, path, null, 0))));
+        }
+        if (state.folders.length === 0) {
+            parts.push(h(document, "p", {class: "text-muted mb-0"}, "Aucun répertoire : tous les fichiers sont à la racine des médias."));
+            return parts;
+        }
+        if (state.folders.length > 15) {
+            parts.push(h(document, "input", {class: "form-control form-control-sm mb-2 tf-filter", type: "search",
+                placeholder: "Filtrer les répertoires…", "aria-label": "Filtrer les répertoires", oninput: (event) => {
+                    const text = event.target.value.trim().toLowerCase();
+                    current.pane.querySelectorAll(".tf-folders .tf-folder").forEach((row) => {
+                        row.hidden = text !== "" && !row.dataset.path.includes(text);
+                    });
+                }}));
+        }
+        parts.push(h(document, "div", {class: "tf-folders border rounded p-2"},
+            state.folders.map((folder) => {
+                const segments = folder.path.split("/");
+                return line(folder.path, segments[segments.length - 1], folder.files, segments.length - 1);
+            })));
+        return parts;
+    }
+
+    /** A folder whose parent is excluded is excluded too: shown checked and locked. */
+    function syncTree() {
+        const rows = current?.pane.querySelectorAll(".tf-folders .tf-folder") ?? [];
+        const checked = [];
+        rows.forEach((row) => {
+            const input = row.querySelector("input");
+            const path = row.dataset.path;
+            const byParent = checked.some((parent) => path.startsWith(`${parent}/`));
+            if (byParent) {
+                if (!input.disabled) input.dataset.own = input.checked ? "1" : "";
+                input.checked = true;
+                input.disabled = true;
+                input.title = "Exclu avec son répertoire parent";
+            } else {
+                if (input.disabled) {
+                    input.checked = input.dataset.own === "1";
+                    input.disabled = false;
+                    input.removeAttribute("title");
+                }
+                if (input.checked) checked.push(path);
+            }
+        });
+    }
+
     function render() {
         const {pane, state} = current;
         const s = state.settings;
@@ -255,15 +322,7 @@ function mount(document, window, basePath) {
                 h(document, "div", {class: "form-text"}, help));
         };
 
-        const playlistList = state.playlists.length === 0
-            ? h(document, "p", {class: "text-muted mb-0"}, "Cette station n'a aucune playlist.")
-            : h(document, "div", {class: "tf-playlists border rounded p-2"},
-                state.playlists.map((playlist) => h(document, "div", {class: "form-check"},
-                    h(document, "input", {
-                        class: "form-check-input tf-excluded", type: "checkbox", id: `tf-playlist-${playlist.id}`,
-                        value: playlist.id, checked: s.excluded_playlists.includes(playlist.id),
-                    }),
-                    h(document, "label", {class: "form-check-label", for: `tf-playlist-${playlist.id}`}, playlist.name))));
+        const folderList = folderTree(state, s);
 
         const fade = state.crossfade_enabled
             ? `${formatNumber(state.max_fade_out)} s, la durée du fondu enchaîné réglée dans l'onglet AutoDJ`
@@ -298,10 +357,11 @@ function mount(document, window, basePath) {
                         "Le titre suivant démarre (cross_start_next) après la dernière mesure au-dessus de ce seuil. "
                         + "Par défaut : −5 dB."))),
             h(document, "fieldset", {class: "mb-4"},
-                h(document, "legend", {class: "h5"}, "Playlists exclues"),
+                h(document, "legend", {class: "h5"}, "Répertoires exclus"),
                 h(document, "p", {class: "form-text mt-0"},
-                    "Les fichiers de ces playlists ne sont jamais analysés (par exemple les jingles)."),
-                playlistList),
+                    "Les fichiers de ces répertoires, sous-répertoires compris, ne sont jamais analysés "
+                    + "(par exemple les jingles)."),
+                folderList),
             h(document, "ul", {class: "tf-facts small text-muted mb-4"},
                 h(document, "li", {}, `Gain (amplify) calculé pour une sonie de ${formatNumber(state.target_lufs)} LUFS, arrondi à 0,1 dB.`),
                 h(document, "li", {}, `Fondu de sortie limité à ${fade}.`),
@@ -315,6 +375,7 @@ function mount(document, window, basePath) {
             h(document, "div", {class: "tf-status"}),
         );
 
+        syncTree();
         renderStatus();
     }
 
@@ -333,7 +394,7 @@ function mount(document, window, basePath) {
         } else if (before > 0) {
             lines.push(h(document, "p", {},
                 `${plural(before, "fichier déjà présent", "fichiers déjà présents")} dans les médias `
-                + `${before > 1 ? "n'ont" : "n'a"} aucun point de cue (fichiers de plus de 8 minutes et playlists exclues non comptés).`),
+                + `${before > 1 ? "n'ont" : "n'a"} aucun point de cue (fichiers de plus de 8 minutes et répertoires exclus non comptés).`),
             h(document, "button", {class: "btn btn-outline-primary", type: "button", disabled: !state.settings.enabled,
                 onclick: () => backfill(true)}, before > 1 ? "Analyser ces fichiers" : "Analyser ce fichier"));
             if (!state.settings.enabled) {
@@ -383,7 +444,7 @@ function mount(document, window, basePath) {
         const body = {
             enabled: pane.querySelector("#tf-enabled").checked,
             ...values,
-            excluded_playlists: [...pane.querySelectorAll(".tf-excluded:checked")].map((input) => Number(input.value)),
+            excluded_folders: [...pane.querySelectorAll(".tf-excluded:checked:not(:disabled)")].map((input) => input.value),
         };
         setBusy(true);
         message("", "");

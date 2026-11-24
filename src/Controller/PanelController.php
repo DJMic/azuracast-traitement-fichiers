@@ -59,12 +59,7 @@ final class PanelController
             $this->verifyCsrf($request);
             $station = $request->getStation();
             $configDir = $station->getRadioConfigDir();
-            $settings = Settings::fromInput(
-                $this->body($request),
-                $this->store->readSettings($configDir),
-                array_column($this->playlists($station), 'id'),
-                time()
-            );
+            $settings = Settings::fromInput($this->body($request), $this->store->readSettings($configDir), time());
             $this->store->writeSettings($configDir, $settings);
 
             return $this->json($response, [
@@ -109,6 +104,11 @@ final class PanelController
         $locationId = (int)$station->media_storage_location->id;
         $blocked = Processor::blockedIds($state, time());
         $finder = $this->processor->finder();
+        $folders = $finder->folders($locationId);
+        $known = [];
+        foreach ($folders as $folder) {
+            $known[mb_strtolower($folder['path'])] = true;
+        }
 
         $owner = $this->processor->settingsOwner($station);
 
@@ -121,7 +121,12 @@ final class PanelController
             'max_fade_out' => Processor::maxOverlap($station),
             'crossfade_enabled' => Processor::hasCrossfade($station),
             'autocue_enabled' => (bool)$station->backend_config->enable_auto_cue,
-            'playlists' => $this->playlists($station),
+            'folders' => $folders,
+            // Excluded folders that no longer exist (renamed or deleted): they exclude nothing now.
+            'missing_folders' => array_values(array_filter(
+                $settings['excluded_folders'],
+                static fn(string $folder): bool => !isset($known[mb_strtolower($folder)])
+            )),
             // Another station sharing the same media decides (lowest ID): this one's settings are not used.
             'owner' => $owner !== null && $owner->id !== $station->id
                 ? ['id' => $owner->id, 'name' => $owner->name]
@@ -133,12 +138,6 @@ final class PanelController
             'existing' => $finder->count($locationId, $settings, true, $blocked),
             'failed' => count($blocked),
         ];
-    }
-
-    /** @return list<array{id: int, name: string}> */
-    private function playlists(Station $station): array
-    {
-        return $this->processor->finder()->playlists((int)$station->id);
     }
 
     private function verifyCsrf(ServerRequest $request): void

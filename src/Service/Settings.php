@@ -37,7 +37,8 @@ final class Settings
             'cue_in_threshold' => -28.0,
             'cue_out_threshold' => -28.0,
             'cross_threshold' => -5.0,
-            'excluded_playlists' => [],
+            // Folders of the station's media whose files (subfolders included) are never analysed.
+            'excluded_folders' => [],
             // Time of the first activation: only files added since then are analysed automatically.
             'activated_at' => 0,
         ];
@@ -54,18 +55,14 @@ final class Settings
                 $settings[$key] = round((float)$value, 1);
             }
         }
-        $settings['excluded_playlists'] = self::ids($data['excluded_playlists'] ?? []);
+        $settings['excluded_folders'] = self::folders($data['excluded_folders'] ?? []);
         $settings['activated_at'] = max(0, (int)($data['activated_at'] ?? 0));
 
         return $settings;
     }
 
-    /**
-     * Validates the values sent by the settings tab.
-     *
-     * @param int[] $playlistIds Playlists of the station (others are dropped).
-     */
-    public static function fromInput(array $input, array $current, array $playlistIds, int $now): array
+    /** Validates the values sent by the settings tab. */
+    public static function fromInput(array $input, array $current, int $now): array
     {
         $settings = self::withDefaults($current);
         $settings['enabled'] = filter_var($input['enabled'] ?? false, FILTER_VALIDATE_BOOL);
@@ -98,10 +95,7 @@ final class Settings
             );
         }
 
-        $settings['excluded_playlists'] = array_values(array_intersect(
-            self::ids($input['excluded_playlists'] ?? []),
-            $playlistIds
-        ));
+        $settings['excluded_folders'] = self::folders($input['excluded_folders'] ?? []);
 
         if ($settings['enabled'] && $settings['activated_at'] === 0) {
             $settings['activated_at'] = $now;
@@ -110,22 +104,47 @@ final class Settings
         return $settings;
     }
 
-    /** @return int[] */
-    private static function ids(mixed $value): array
+    /**
+     * Folder paths as AzuraCast stores them ("JINGLES/Noël": no leading or trailing slash),
+     * without duplicates (case-insensitive, like the database) and without subfolders of a folder
+     * that is already in the list (they are excluded with it).
+     *
+     * @return string[]
+     */
+    public static function folders(mixed $value): array
     {
         if (!is_array($value)) {
             return [];
         }
-        $ids = [];
-        foreach ($value as $id) {
-            if (is_int($id) || (is_string($id) && ctype_digit($id))) {
-                $ids[(int)$id] = (int)$id;
+        $folders = [];
+        foreach ($value as $folder) {
+            if (!is_string($folder)) {
+                continue;
             }
+            $folder = trim(preg_replace('~/+~', '/', str_replace('\\', '/', $folder)) ?? '', " /");
+            if (
+                $folder === '' || mb_strlen($folder) > 500 || preg_match('/[\x00-\x1F]/', $folder)
+                || in_array('..', explode('/', $folder), true)
+            ) {
+                continue;
+            }
+            $folders[mb_strtolower($folder)] ??= $folder;
         }
-        unset($ids[0]);
-        sort($ids);
+        ksort($folders, SORT_STRING);
 
-        return array_values($ids);
+        $result = [];
+        $kept = [];
+        foreach ($folders as $key => $folder) {
+            foreach ($kept as $parent) {
+                if (str_starts_with($key, $parent . '/')) {
+                    continue 2;
+                }
+            }
+            $kept[] = $key;
+            $result[] = $folder;
+        }
+
+        return $result;
     }
 
     private static function number(float $value): string

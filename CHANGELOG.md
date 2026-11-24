@@ -1,5 +1,11 @@
 # Changements
 
+## 1.1.0
+
+- Exclusion par **répertoires** au lieu des playlists : les fichiers des répertoires cochés, sous-répertoires compris, ne sont jamais analysés. L'onglet présente les répertoires des médias en arbre, avec leur nombre de fichiers et un filtre quand il y en a beaucoup. Un répertoire exclu qui n'existe plus est signalé.
+- La liste des répertoires est tirée de la base d'AzuraCast : le stockage (S3…) n'est jamais listé.
+- Les playlists exclues des versions précédentes ne sont pas reprises : cochez les répertoires à exclure.
+
 ## 1.0.1
 
 - Correction : l'onglet ne se chargeait pas (« Table 'station_playlist' doesn't exist »). La table des playlists d'AzuraCast s'appelle `station_playlists`. La lecture des playlists est maintenant couverte par les tests.

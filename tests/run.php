@@ -97,21 +97,20 @@ $defaults = Settings::defaults();
 check('défauts : -28 / -28 / -5, désactivé', [$defaults['cue_in_threshold'], $defaults['cue_out_threshold'], $defaults['cross_threshold'], $defaults['enabled']], [-28.0, -28.0, -5.0, false]);
 
 $saved = Settings::fromInput(
-    ['enabled' => true, 'cue_in_threshold' => '-30,5', 'cue_out_threshold' => -40, 'cross_threshold' => '-6', 'excluded_playlists' => [3, '7', 99, 'x']],
+    ['enabled' => true, 'cue_in_threshold' => '-30,5', 'cue_out_threshold' => -40, 'cross_threshold' => '-6', 'excluded_folders' => ['/JINGLES/', 'jingles/Noël', 'Pubs', 5, '../x', '']],
     $defaults,
-    [3, 7, 8],
     1000
 );
 check('saisie : virgule acceptée', $saved['cue_in_threshold'], -30.5);
-check('saisie : playlists inconnues retirées', $saved['excluded_playlists'], [3, 7]);
+check('saisie : répertoires nettoyés, sous-répertoires d\'un répertoire exclu retirés', $saved['excluded_folders'], ['JINGLES', 'Pubs']);
 check('première activation mémorisée', $saved['activated_at'], 1000);
-$again = Settings::fromInput(['enabled' => false, 'cue_in_threshold' => -28, 'cue_out_threshold' => -28, 'cross_threshold' => -5], $saved, [], 2000);
-$again = Settings::fromInput(['enabled' => true, 'cue_in_threshold' => -28, 'cue_out_threshold' => -28, 'cross_threshold' => -5], $again, [], 3000);
+$again = Settings::fromInput(['enabled' => false, 'cue_in_threshold' => -28, 'cue_out_threshold' => -28, 'cross_threshold' => -5], $saved, 2000);
+$again = Settings::fromInput(['enabled' => true, 'cue_in_threshold' => -28, 'cue_out_threshold' => -28, 'cross_threshold' => -5], $again, 3000);
 check('réactivation : la date de première activation est gardée', $again['activated_at'], 1000);
-throws('seuil hors limites refusé', fn() => Settings::fromInput(['cue_in_threshold' => -80, 'cue_out_threshold' => -28, 'cross_threshold' => -5], $defaults, [], 1), 'entre');
-throws('seuil non numérique refusé', fn() => Settings::fromInput(['cue_in_threshold' => 'abc', 'cue_out_threshold' => -28, 'cross_threshold' => -5], $defaults, [], 1), 'nombre');
-throws('seuil de fondu sous le seuil de fin refusé', fn() => Settings::fromInput(['cue_in_threshold' => -28, 'cue_out_threshold' => -28, 'cross_threshold' => -30], $defaults, [], 1), 'plus élevé');
-check('fichier abîmé : valeurs par défaut', Settings::withDefaults(['cue_in_threshold' => 'n', 'excluded_playlists' => 'x'])['cue_in_threshold'], -28.0);
+throws('seuil hors limites refusé', fn() => Settings::fromInput(['cue_in_threshold' => -80, 'cue_out_threshold' => -28, 'cross_threshold' => -5], $defaults, 1), 'entre');
+throws('seuil non numérique refusé', fn() => Settings::fromInput(['cue_in_threshold' => 'abc', 'cue_out_threshold' => -28, 'cross_threshold' => -5], $defaults, 1), 'nombre');
+throws('seuil de fondu sous le seuil de fin refusé', fn() => Settings::fromInput(['cue_in_threshold' => -28, 'cue_out_threshold' => -28, 'cross_threshold' => -30], $defaults, 1), 'plus élevé');
+check('fichier abîmé : valeurs par défaut', Settings::withDefaults(['cue_in_threshold' => 'n', 'excluded_folders' => 'x'])['cue_in_threshold'], -28.0);
 
 // --- Store ------------------------------------------------------------------------------------
 $store = new Store();
@@ -237,15 +236,14 @@ try {
 if ($pdo !== null) {
     $sql = new PdoSql($pdo);
     // Same columns as AzuraCast's tables (only those the plugin uses).
-    $pdo->exec('DROP TABLE IF EXISTS station_playlist_media, station_playlists, station_media, station');
+    $pdo->exec('DROP TABLE IF EXISTS station_playlist_media, station_media, station');
+    // AzuraCast's default collation: paths are compared without regard to case.
+    $pdo->exec('ALTER DATABASE CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci');
     $pdo->exec('CREATE TABLE station (id INT PRIMARY KEY, is_enabled TINYINT(1) NOT NULL)');
     $pdo->exec('CREATE TABLE station_media (id INT AUTO_INCREMENT PRIMARY KEY, storage_location_id INT NOT NULL,
         path VARCHAR(500) NOT NULL, length DOUBLE NOT NULL, size BIGINT NOT NULL, mtime INT NOT NULL,
         uploaded_at INT NOT NULL, extra_metadata LONGTEXT NULL CHECK (extra_metadata IS NULL OR JSON_VALID(extra_metadata)))');
-    $pdo->exec('CREATE TABLE station_playlist_media (id INT AUTO_INCREMENT PRIMARY KEY, media_id INT NOT NULL, playlist_id INT NOT NULL)');
-    $pdo->exec('CREATE TABLE station_playlists (id INT AUTO_INCREMENT PRIMARY KEY, station_id INT NOT NULL, name VARCHAR(200) NOT NULL)');
     $pdo->exec('INSERT INTO station VALUES (1, 1), (2, 1), (3, 0)');
-    $pdo->exec("INSERT INTO station_playlists (id, station_id, name) VALUES (40, 1, 'Jingles'), (5, 1, 'Hits'), (6, 2, 'Autre station')");
 
     $now = time();
     $activated = $now - 86400;
@@ -255,6 +253,8 @@ if ($pdo !== null) {
     copy($song, $mediaDir . '/MP3/new.mp3');
     copy($song, $mediaDir . '/MP3/nulls.mp3');
     copy($song, $mediaDir . '/MP3/old.mp3');
+    @mkdir($mediaDir . '/PUBS 50x-off');
+    copy($song, $mediaDir . '/PUBS 50x-off/pub.mp3');
     file_put_contents($mediaDir . '/MP3/broken.mp3', str_repeat('x', 5000));
     $nullsJson = json_encode(array_fill_keys(MediaFinder::FIELDS, null));
     $rows = [
@@ -264,7 +264,9 @@ if ($pdo !== null) {
         ['MP3/old.mp3', 20.5, filesize($song), $now - 9000, $activated - 100, null, 1],
         ['MP3/long.mp3', 600.0, 100, $now - 120, $now - 130, null, 1],
         ['MP3/fresh.mp3', 20.5, 100, $now - 10, $now - 10, null, 1],
-        ['MP3/jingle.mp3', 5.0, 100, $now - 120, $now - 130, null, 1],
+        ['Jingles/Noël/jingle.mp3', 5.0, 100, $now - 120, $now - 130, null, 1],
+        ['PUBS 50%_off/pub.mp3', 15.0, 100, $now - 120, $now - 130, null, 1],
+        ['PUBS 50x-off/pub.mp3', 20.5, filesize($song), $now - 9000, $activated - 200, null, 1],
         ['MP3/nulls.mp3', 20.5, filesize($song), $now - 120, $now - 130, $nullsJson, 1],
         ['MP3/broken.mp3', 20.5, 5000, $now - 120, $now - 130, null, 1],
         ['MP3/amplify-only.mp3', 20.5, 100, $now - 120, $now - 130, '{"amplify":-3.2}', 1],
@@ -276,12 +278,23 @@ if ($pdo !== null) {
         $insert->execute($row);
         $ids[$row[0]] = (int)$pdo->lastInsertId();
     }
-    $pdo->exec('INSERT INTO station_playlist_media (media_id, playlist_id) VALUES (' . $ids['MP3/jingle.mp3'] . ', 40)');
 
     $finder = new MediaFinder($sql);
-    check('playlists de la station (table station_playlists)', $finder->playlists(1), [['id' => 5, 'name' => 'Hits'], ['id' => 40, 'name' => 'Jingles']]);
-    $settings = ['activated_at' => $activated, 'excluded_playlists' => [40]] + Settings::defaults();
     $paths = static fn(array $list): array => array_map(static fn(array $m): string => $m['path'], $list);
+    check('répertoires des médias, en arbre, avec le nombre de fichiers', $finder->folders(1), [
+        ['path' => 'Jingles', 'files' => 1],
+        ['path' => 'Jingles/Noël', 'files' => 1],
+        ['path' => 'MP3', 'files' => 8],
+        ['path' => 'PUBS 50%_off', 'files' => 1],
+        ['path' => 'PUBS 50x-off', 'files' => 1],
+    ]);
+    $excluded = ['JINGLES', 'PUBS 50%_off'];
+    $settings = ['activated_at' => $activated, 'excluded_folders' => $excluded] + Settings::defaults();
+    check(
+        'répertoires exclus : majuscules ignorées, % et _ pris à la lettre',
+        array_values(array_filter($paths($finder->candidates(1, $settings, true, $now)), static fn(string $p): bool => !str_starts_with($p, 'MP3/'))),
+        ['PUBS 50x-off/pub.mp3']
+    );
 
     check(
         'candidats : nouveaux fichiers sans valeurs (sauf longs, récents, exclus, déjà renseignés)',
@@ -364,7 +377,7 @@ if ($pdo !== null) {
         3 => new Station(3, 'Arrêtée', new StorageLocation(1, new StorageLocationAdapterKind(true)), new StationBackendConfiguration(), $configs[3]),
     ];
     foreach ([1, 2, 3] as $id) {
-        $store->writeSettings($configs[$id], ['enabled' => true, 'activated_at' => $activated, 'excluded_playlists' => [40]] + Settings::defaults());
+        $store->writeSettings($configs[$id], ['enabled' => true, 'activated_at' => $activated, 'excluded_folders' => $excluded] + Settings::defaults());
     }
     $em = new class($stations) implements ReloadableEntityManagerInterface {
         public function __construct(private array $stations)
@@ -441,7 +454,8 @@ if ($pdo !== null) {
     check('fichier déjà renseigné intact', $metadata('MP3/tagged.mp3'), ['cue_in' => 0.5]);
     check('gain seul intact', $metadata('MP3/amplify-only.mp3'), ['amplify' => -3.2]);
     check('fichier long ignoré', $metadata('MP3/long.mp3'), null);
-    check('fichier exclu ignoré', $metadata('MP3/jingle.mp3'), null);
+    check('fichier d\'un sous-répertoire exclu ignoré', $metadata('Jingles/Noël/jingle.mp3'), null);
+    check('fichier d\'un répertoire exclu ignoré', $metadata('PUBS 50%_off/pub.mp3'), null);
     check('fichier existant ignoré sans demande', $metadata('MP3/old.mp3'), null);
     check('fichier tout juste traité par AzuraCast : attend', $metadata('MP3/fresh.mp3'), null);
     check('S3 incomplet : pas de téléchargement', $remoteFs->downloads, 0);
@@ -466,7 +480,7 @@ if ($pdo !== null) {
     // The "existing files" pass.
     $store->updateState($configs[1], static fn(array $s): array => ['backfill' => true] + $s);
     $stats = $processor->run();
-    check('fichiers existants : le fichier ancien est analysé', [$stats['analysed'], $metadata('MP3/old.mp3') !== null], [1, true]);
+    check('fichiers existants : les deux fichiers anciens sont analysés', [$stats['analysed'], $metadata('MP3/old.mp3') !== null, $metadata('PUBS 50x-off/pub.mp3') !== null], [2, true, true]);
     $processor->run();
     check('fichiers existants : terminé automatiquement', $store->readState($configs[1])['backfill'], false);
 

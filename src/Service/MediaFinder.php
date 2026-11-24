@@ -111,16 +111,43 @@ final class MediaFinder
         ) === 1;
     }
 
-    /** @return list<array{id: int, name: string}> Playlists of a station, by name. */
-    public function playlists(int $stationId): array
+    /**
+     * Folders of a media storage location, from the paths of its files (the storage itself is
+     * never listed: with S3 that would mean listing the whole bucket). Each folder comes with the
+     * number of files it holds, subfolders included.
+     *
+     * @return list<array{path: string, files: int}> Sorted like a tree ("A", "A/B", "B"…).
+     */
+    public function folders(int $storageLocationId): array
     {
-        return array_map(
-            static fn(array $row): array => ['id' => (int)$row['id'], 'name' => (string)$row['name']],
-            $this->sql->fetchAll(
-                'SELECT id, name FROM station_playlists WHERE station_id = ? ORDER BY name ASC',
-                [$stationId]
-            )
+        $rows = $this->sql->fetchAll(
+            'SELECT path FROM station_media WHERE storage_location_id = ?',
+            [$storageLocationId]
         );
+        $counts = [];
+        foreach ($rows as $row) {
+            $parts = explode('/', (string)$row['path']);
+            array_pop($parts); // file name
+            $folder = '';
+            foreach ($parts as $part) {
+                if ($part === '') {
+                    continue;
+                }
+                $folder = $folder === '' ? $part : $folder . '/' . $part;
+                $counts[$folder] = ($counts[$folder] ?? 0) + 1;
+            }
+        }
+        // Tree order: "/" sorts before any other character, so that "A/B" follows "A" directly.
+        uksort($counts, static fn(string $a, string $b): int => strcmp(
+            mb_strtolower(str_replace('/', "\x01", $a)),
+            mb_strtolower(str_replace('/', "\x01", $b))
+        ));
+        $folders = [];
+        foreach ($counts as $path => $files) {
+            $folders[] = ['path' => (string)$path, 'files' => $files];
+        }
+
+        return $folders;
     }
 
     /** True if none of the six custom cue values is set (raw JSON of station_media.extra_metadata). */
@@ -164,10 +191,11 @@ final class MediaFinder
             $where[] = 'sm.id NOT IN (' . $skip . ')';
         }
 
-        $excluded = self::intList($settings['excluded_playlists'] ?? []);
-        if ($excluded !== '') {
-            $where[] = 'NOT EXISTS (SELECT 1 FROM station_playlist_media spm'
-                . ' WHERE spm.media_id = sm.id AND spm.playlist_id IN (' . $excluded . '))';
+        // Excluded folders, subfolders included. Compared like AzuraCast's database compares paths
+        // (case-insensitive with its default collation).
+        foreach (Settings::folders($settings['excluded_folders'] ?? []) as $folder) {
+            $where[] = "sm.path NOT LIKE ? ESCAPE '!'";
+            $params[] = strtr($folder, ['!' => '!!', '%' => '!%', '_' => '!_']) . '/%';
         }
 
         return [$where, $params];
